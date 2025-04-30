@@ -834,78 +834,188 @@ app.post('/send-message', async (req, res) => {
   }
 });
 
+// app.post('/send-group-message', async (req, res) => {
+//   const { groupIds, message, mediaPath } = req.body;
+  
+//   if (!groupIds || !Array.isArray(groupIds) || groupIds.length === 0) {
+//       return res.status(400).json({ 
+//           status: false, 
+//           message: 'Group IDs array is required.' 
+//       });
+//   }
+  
+//   if (!message && !mediaPath) {
+//       return res.status(400).json({ 
+//           status: false, 
+//           message: 'Either message or mediaPath must be provided.' 
+//       });
+//   }
+  
+//   try {
+//       let media = null;
+      
+//       // If mediaPath is provided, check if file exists and prepare media
+//       if (mediaPath) {
+//           if (!fs.existsSync(mediaPath)) {
+//               return res.status(404).json({ 
+//                   status: false, 
+//                   message: 'Media file not found.' 
+//               });
+//           }
+//           media = MessageMedia.fromFilePath(mediaPath);
+//       }
+      
+//       const results = [];
+//       const errors = [];
+      
+//       // Send to each group in parallel
+//       const sendPromises = groupIds.map(async (groupId) => {
+//           try {
+//               if (media) {
+//                   // Send media with caption (if message is provided)
+//                   await client.sendMessage(groupId, media, { caption: message || '' });
+//               } else {
+//                   // Send text-only message
+//                   await client.sendMessage(groupId, message);
+//               }
+//               results.push({ groupId, status: 'success' });
+//           } catch (error) {
+//               errors.push({ groupId, error: error.toString() });
+//           }
+//       });
+      
+//       // Wait for all sending operations to complete
+//       await Promise.all(sendPromises);
+      
+//       const messageType = media ? 'Media' : 'Text message';
+      
+//       res.status(200).json({ 
+//           status: true, 
+//           message: `${messageType} sending process completed`,
+//           results: {
+//               successful: results,
+//               failed: errors
+//           }
+//       });
+//   } catch (error) {
+//       res.status(500).json({ 
+//           status: false, 
+//           message: 'Error in message sending process', 
+//           error: error.toString() 
+//       });
+//   }
+// });
+
 app.post('/send-group-message', async (req, res) => {
-  const { groupIds, message, mediaPath } = req.body;
+  const { groupIds, message, mediaUrl, mediaType } = req.body;
   
   if (!groupIds || !Array.isArray(groupIds) || groupIds.length === 0) {
-      return res.status(400).json({ 
-          status: false, 
-          message: 'Group IDs array is required.' 
-      });
+    return res.status(400).json({ 
+      status: false, 
+      message: 'Group IDs array is required.' 
+    });
   }
   
-  if (!message && !mediaPath) {
-      return res.status(400).json({ 
-          status: false, 
-          message: 'Either message or mediaPath must be provided.' 
-      });
+  if (!message && !mediaUrl) {
+    return res.status(400).json({ 
+      status: false, 
+      message: 'Either message or mediaUrl must be provided.' 
+    });
   }
   
   try {
-      let media = null;
-      
-      // If mediaPath is provided, check if file exists and prepare media
-      if (mediaPath) {
-          if (!fs.existsSync(mediaPath)) {
-              return res.status(404).json({ 
-                  status: false, 
-                  message: 'Media file not found.' 
-              });
-          }
-          media = MessageMedia.fromFilePath(mediaPath);
-      }
-      
-      const results = [];
-      const errors = [];
-      
-      // Send to each group in parallel
-      const sendPromises = groupIds.map(async (groupId) => {
-          try {
-              if (media) {
-                  // Send media with caption (if message is provided)
-                  await client.sendMessage(groupId, media, { caption: message || '' });
-              } else {
-                  // Send text-only message
-                  await client.sendMessage(groupId, message);
-              }
-              results.push({ groupId, status: 'success' });
-          } catch (error) {
-              errors.push({ groupId, error: error.toString() });
-          }
+    if (!isLoggedIn || !client) {
+      return res.status(503).json({
+        status: false,
+        message: '❌ WhatsApp not connected. Please scan QR code first.'
       });
-      
-      // Wait for all sending operations to complete
-      await Promise.all(sendPromises);
-      
-      const messageType = media ? 'Media' : 'Text message';
-      
-      res.status(200).json({ 
-          status: true, 
-          message: `${messageType} sending process completed`,
-          results: {
-              successful: results,
-              failed: errors
-          }
-      });
-  } catch (error) {
-      res.status(500).json({ 
+    }
+    
+    let media = null;
+    
+    // If mediaUrl is provided, prepare media from URL
+    if (mediaUrl) {
+      try {
+        // Load media from URL with unsafe MIME option
+        media = await MessageMedia.fromUrl(mediaUrl, {
+          unsafeMime: true,
+          mimetype: mediaType // Use provided MIME type if available
+        });
+      } catch (mediaError) {
+        log(`❌ Error loading media from URL: ${mediaError.message}`);
+        return res.status(500).json({ 
           status: false, 
-          message: 'Error in message sending process', 
-          error: error.toString() 
+          message: `Failed to load media: ${mediaError.message}` 
+        });
+      }
+    }
+    
+    const results = [];
+    const errors = [];
+    
+    // Send to each group in parallel
+    const sendPromises = groupIds.map(async (groupId) => {
+      try {
+        // Add timeout protection
+        const sendPromise = media 
+          ? client.sendMessage(groupId, media, { caption: message || '' })
+          : client.sendMessage(groupId, message);
+          
+        await Promise.race([
+          sendPromise,
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Send timeout')), 30000)
+          )
+        ]);
+        
+        results.push({ groupId, status: 'success' });
+        log(`✅ ${media ? 'Media' : 'Text'} message sent to group ${groupId}`);
+      } catch (error) {
+        errors.push({ groupId, error: error.toString() });
+        log(`❌ Error sending message to group ${groupId}: ${error.message}`);
+      }
+    });
+    
+    // Wait for all sending operations to complete
+    await Promise.all(sendPromises);
+    
+    const messageType = media ? 'Media' : 'Text message';
+    
+    lastActiveTimestamp = Date.now();
+    
+    res.status(200).json({ 
+      status: true, 
+      message: `${messageType} sending process completed`,
+      results: {
+        successful: results,
+        failed: errors
+      }
+    });
+  } catch (error) {
+    log(`❌ Error in group message sending process: ${error.message}`);
+    
+    if (
+      error.message &&
+      (error.message.includes('Connection closed') ||
+       error.message.includes('not connected') ||
+       error.message.includes('terminated') ||
+       error.message.includes('timeout'))
+    ) {
+      await handleDisconnection(`Group message send failure: ${error.message}`);
+      return res.status(503).json({
+        status: false,
+        message: '❌ WhatsApp disconnected. Reinitializing connection. Please try again later.'
       });
+    }
+    
+    checkActiveConnection();
+    res.status(500).json({ 
+      status: false, 
+      message: 'Error in message sending process', 
+      error: error.toString() 
+    });
   }
 });
-
 // Status endpoint to check server and WhatsApp connection status
 app.get('/status', async (req, res) => {
   let state = connectionState;
