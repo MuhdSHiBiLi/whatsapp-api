@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# WhatsApp auth data
+.wwebjs_auth/
+.wwebjs_cache/
+cleanup.bat
+
+# Runtime data
+uploads/*
+!uploads/.gitkeep
+server-running.txt
+
+# Environment variables
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
