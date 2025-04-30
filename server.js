@@ -700,6 +700,78 @@ app.post('/send-message', async (req, res) => {
   }
 });
 
+app.post('/send-group-message', async (req, res) => {
+  const { groupIds, message, mediaPath } = req.body;
+  
+  if (!groupIds || !Array.isArray(groupIds) || groupIds.length === 0) {
+      return res.status(400).json({ 
+          status: false, 
+          message: 'Group IDs array is required.' 
+      });
+  }
+  
+  if (!message && !mediaPath) {
+      return res.status(400).json({ 
+          status: false, 
+          message: 'Either message or mediaPath must be provided.' 
+      });
+  }
+  
+  try {
+      let media = null;
+      
+      // If mediaPath is provided, check if file exists and prepare media
+      if (mediaPath) {
+          if (!fs.existsSync(mediaPath)) {
+              return res.status(404).json({ 
+                  status: false, 
+                  message: 'Media file not found.' 
+              });
+          }
+          media = MessageMedia.fromFilePath(mediaPath);
+      }
+      
+      const results = [];
+      const errors = [];
+      
+      // Send to each group in parallel
+      const sendPromises = groupIds.map(async (groupId) => {
+          try {
+              if (media) {
+                  // Send media with caption (if message is provided)
+                  await client.sendMessage(groupId, media, { caption: message || '' });
+              } else {
+                  // Send text-only message
+                  await client.sendMessage(groupId, message);
+              }
+              results.push({ groupId, status: 'success' });
+          } catch (error) {
+              errors.push({ groupId, error: error.toString() });
+          }
+      });
+      
+      // Wait for all sending operations to complete
+      await Promise.all(sendPromises);
+      
+      const messageType = media ? 'Media' : 'Text message';
+      
+      res.status(200).json({ 
+          status: true, 
+          message: `${messageType} sending process completed`,
+          results: {
+              successful: results,
+              failed: errors
+          }
+      });
+  } catch (error) {
+      res.status(500).json({ 
+          status: false, 
+          message: 'Error in message sending process', 
+          error: error.toString() 
+      });
+  }
+});
+
 // Status endpoint to check server and WhatsApp connection status
 app.get('/status', async (req, res) => {
   let state = connectionState;
