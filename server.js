@@ -11,7 +11,9 @@ const { exec } = require('child_process');
 const app = express();
 
 // 👇 Middleware to allow JSON body
-app.use(express.json());
+// app.use(express.json());
+app.use(express.json({ limit: '16mb' }));
+app.use(express.urlencoded({ extended: true, limit: '16mb' }));
 
 // Auth directory path
 const AUTH_DIR = path.join(__dirname, '.wwebjs_auth');
@@ -701,9 +703,91 @@ app.post('/send-text', async (req, res) => {
 //   }
 // });
 
+// app.post('/send-messagehd', async (req, res) => {
+//   const { number, message, mediaUrl, mediaType } = req.body;
+
+//   // Validate required parameters
+//   if (!number) {
+//     return res.status(400).send('❌ Missing recipient number');
+//   }
+  
+//   // Either a message or mediaUrl must be provided (or both can be provided)
+//   if (!message && !mediaUrl) {
+//     return res.status(400).send('❌ Missing both message and mediaUrl. At least one is required.');
+//   }
+
+//   try {
+//     if (!isLoggedIn || !client) {
+//       return res.status(503).send('❌ WhatsApp not connected. Please scan QR code first.');
+//     }
+
+//     const chatId = number.includes('@c.us') ? number : `${number}@c.us`;
+
+//     // Case 1: Send media (with optional caption)
+//     if (mediaUrl) {
+//       try {
+//         // Load media from URL with unsafe MIME option
+//         const media = await MessageMedia.fromUrl(mediaUrl, {
+//           unsafeMime: true,
+//           mimetype: mediaType // Use provided MIME type if available
+//         });
+
+//         const sendPromise = client.sendMessage(chatId, media, {
+//           caption: message || '', // Use message as caption if provided
+//           sendMediaAsDocument: true // Send as document
+//         });
+        
+//         await Promise.race([
+//           sendPromise,
+//           new Promise((_, reject) => 
+//             setTimeout(() => reject(new Error('Send timeout')), 30000) // Longer timeout for media
+//           )
+//         ]);
+        
+//         const logMessage = message 
+//           ? `✅ HD media with caption sent to ${number} from URL` 
+//           : `✅ HD media sent to ${number} from URL`;
+//         log(logMessage);
+//       } catch (mediaError) {
+//         log(`❌ Error sending media to ${number}: ${mediaError.message}`);
+//         return res.status(500).send(`❌ Failed to send media: ${mediaError.message}`);
+//       }
+//     } 
+//     // Case 2: Send text message only
+//     else if (message) {
+//       const sendPromise = client.sendMessage(chatId, message);
+//       await Promise.race([
+//         sendPromise,
+//         new Promise((_, reject) => 
+//           setTimeout(() => reject(new Error('Send timeout')), 20000)
+//         )
+//       ]);
+      
+//       log(`✅ Text message sent to ${number}`);
+//     }
+
+//     lastActiveTimestamp = Date.now();
+//     res.send('✅ Message sent successfully!');
+//   } catch (error) {
+//     log(`❌ Error sending message to ${number}: ${error.message}`);
+    
+//     if (
+//       error.message &&
+//       (error.message.includes('Connection closed') ||
+//        error.message.includes('not connected') ||
+//        error.message.includes('terminated') ||
+//        error.message.includes('timeout'))
+//     ) {
+//       await handleDisconnection(`Message send failure: ${error.message}`);
+//       return res.status(503).send('❌ WhatsApp disconnected. Reinitializing connection. Please try again later.');
+//     }
+    
+//     checkActiveConnection();
+//     res.status(500).send(`❌ Failed to send message: ${error.message}`);
+//   }
+// });
 app.post('/send-messagehd', async (req, res) => {
   const { number, message, mediaUrl, mediaType } = req.body;
-
   // Validate required parameters
   if (!number) {
     return res.status(400).send('❌ Missing recipient number');
@@ -713,32 +797,54 @@ app.post('/send-messagehd', async (req, res) => {
   if (!message && !mediaUrl) {
     return res.status(400).send('❌ Missing both message and mediaUrl. At least one is required.');
   }
-
   try {
     if (!isLoggedIn || !client) {
       return res.status(503).send('❌ WhatsApp not connected. Please scan QR code first.');
     }
-
     const chatId = number.includes('@c.us') ? number : `${number}@c.us`;
-
     // Case 1: Send media (with optional caption)
     if (mediaUrl) {
       try {
-        // Load media from URL with unsafe MIME option
-        const media = await MessageMedia.fromUrl(mediaUrl, {
-          unsafeMime: true,
-          mimetype: mediaType // Use provided MIME type if available
-        });
-
+        log(`⏳ Starting download of media from ${mediaUrl}`);
+        
+        // Increase timeout for media download
+        const downloadTimeout = 120000; // 2 minutes for download
+        const sendTimeout = 180000; // 3 minutes for sending
+        
+        // Configure axios with timeout for large files
+        const axios = require('axios');
+        const mediaResponse = await Promise.race([
+          axios.get(mediaUrl, { 
+            responseType: 'arraybuffer',
+            timeout: downloadTimeout,
+            maxContentLength: 16 * 1024 * 1024, // 16MB max content length
+            maxBodyLength: 16 * 1024 * 1024     // 16MB max body length
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Media download timeout')), downloadTimeout)
+          )
+        ]);
+        
+        log(`✅ Media downloaded successfully, size: ${mediaResponse.data.length / (1024 * 1024)} MB`);
+        
+        // Create media from buffer instead of URL
+        const media = new MessageMedia(
+          mediaType || mediaResponse.headers['content-type'] || 'application/octet-stream',
+          Buffer.from(mediaResponse.data).toString('base64'),
+          `file.${mediaType ? mediaType.split('/')[1] : 'dat'}`
+        );
+        
+        log(`⏳ Sending media to ${number}...`);
+        
         const sendPromise = client.sendMessage(chatId, media, {
-          caption: message || '', // Use message as caption if provided
-          sendMediaAsDocument: true // Send as document
+          caption: message || '', 
+          sendMediaAsDocument: true
         });
         
         await Promise.race([
           sendPromise,
           new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Send timeout')), 30000) // Longer timeout for media
+            setTimeout(() => reject(new Error('Send timeout')), sendTimeout)
           )
         ]);
         
@@ -763,7 +869,6 @@ app.post('/send-messagehd', async (req, res) => {
       
       log(`✅ Text message sent to ${number}`);
     }
-
     lastActiveTimestamp = Date.now();
     res.send('✅ Message sent successfully!');
   } catch (error) {
@@ -784,7 +889,6 @@ app.post('/send-messagehd', async (req, res) => {
     res.status(500).send(`❌ Failed to send message: ${error.message}`);
   }
 });
-
 // Send regular media message
 // app.post('/send-message', async (req, res) => {
 //     const { number, message, image } = req.body;
