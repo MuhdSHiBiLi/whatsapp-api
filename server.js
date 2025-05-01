@@ -629,11 +629,89 @@ app.post('/send-text', async (req, res) => {
 //     }
 // });
 
+// app.post('/send-messagehd', async (req, res) => {
+//   const { number, message, mediaUrl, mediaType } = req.body;
+
+//   if (!number || (!message && !mediaUrl)) {
+//     return res.status(400).send('❌ Missing number or message/mediaUrl');
+//   }
+
+//   try {
+//     if (!isLoggedIn || !client) {
+//       return res.status(503).send('❌ WhatsApp not connected. Please scan QR code first.');
+//     }
+
+//     const chatId = number.includes('@c.us') ? number : `${number}@c.us`;
+
+//     if (mediaUrl) {
+//       try {
+//         // Load media from URL with unsafe MIME option
+//         const media = await MessageMedia.fromUrl(mediaUrl, {
+//           unsafeMime: true,
+//           mimetype: mediaType // Use provided MIME type if available
+//         });
+
+//         const sendPromise = client.sendMessage(chatId, media, {
+//           caption: message || '',
+//           sendMediaAsDocument: true // Send as document
+//         });
+        
+//         await Promise.race([
+//           sendPromise,
+//           new Promise((_, reject) => 
+//             setTimeout(() => reject(new Error('Send timeout')), 30000) // Longer timeout for media
+//           )
+//         ]);
+        
+//         log(`✅ HD media message sent to ${number} from URL`);
+//       } catch (mediaError) {
+//         log(`❌ Error sending media to ${number}: ${mediaError.message}`);
+//         return res.status(500).send(`❌ Failed to send media: ${mediaError.message}`);
+//       }
+//     } else {
+//       const sendPromise = client.sendMessage(chatId, message);
+//       await Promise.race([
+//         sendPromise,
+//         new Promise((_, reject) => 
+//           setTimeout(() => reject(new Error('Send timeout')), 20000)
+//         )
+//       ]);
+      
+//       log(`✅ Text message sent to ${number}`);
+//     }
+
+//     lastActiveTimestamp = Date.now();
+//     res.send('✅ Message sent successfully!');
+//   } catch (error) {
+//     log(`❌ Error sending message to ${number}: ${error.message}`);
+    
+//     if (
+//       error.message &&
+//       (error.message.includes('Connection closed') ||
+//        error.message.includes('not connected') ||
+//        error.message.includes('terminated') ||
+//        error.message.includes('timeout'))
+//     ) {
+//       await handleDisconnection(`Message send failure: ${error.message}`);
+//       return res.status(503).send('❌ WhatsApp disconnected. Reinitializing connection. Please try again later.');
+//     }
+    
+//     checkActiveConnection();
+//     res.status(500).send(`❌ Failed to send message: ${error.message}`);
+//   }
+// });
+
 app.post('/send-messagehd', async (req, res) => {
   const { number, message, mediaUrl, mediaType } = req.body;
 
-  if (!number || (!message && !mediaUrl)) {
-    return res.status(400).send('❌ Missing number or message/mediaUrl');
+  // Validate required parameters
+  if (!number) {
+    return res.status(400).send('❌ Missing recipient number');
+  }
+  
+  // Either a message or mediaUrl must be provided (or both can be provided)
+  if (!message && !mediaUrl) {
+    return res.status(400).send('❌ Missing both message and mediaUrl. At least one is required.');
   }
 
   try {
@@ -643,6 +721,7 @@ app.post('/send-messagehd', async (req, res) => {
 
     const chatId = number.includes('@c.us') ? number : `${number}@c.us`;
 
+    // Case 1: Send media (with optional caption)
     if (mediaUrl) {
       try {
         // Load media from URL with unsafe MIME option
@@ -652,7 +731,7 @@ app.post('/send-messagehd', async (req, res) => {
         });
 
         const sendPromise = client.sendMessage(chatId, media, {
-          caption: message || '',
+          caption: message || '', // Use message as caption if provided
           sendMediaAsDocument: true // Send as document
         });
         
@@ -663,12 +742,17 @@ app.post('/send-messagehd', async (req, res) => {
           )
         ]);
         
-        log(`✅ HD media message sent to ${number} from URL`);
+        const logMessage = message 
+          ? `✅ HD media with caption sent to ${number} from URL` 
+          : `✅ HD media sent to ${number} from URL`;
+        log(logMessage);
       } catch (mediaError) {
         log(`❌ Error sending media to ${number}: ${mediaError.message}`);
         return res.status(500).send(`❌ Failed to send media: ${mediaError.message}`);
       }
-    } else {
+    } 
+    // Case 2: Send text message only
+    else if (message) {
       const sendPromise = client.sendMessage(chatId, message);
       await Promise.race([
         sendPromise,
