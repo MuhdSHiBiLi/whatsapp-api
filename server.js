@@ -5,7 +5,6 @@ const sharp = require('sharp');
 const fs = require('fs');
 const axios = require('axios');
 const path = require('path');
-const multer = require('multer');
 const { exec } = require('child_process');
 // For auto open browser - uncomment for development, keep commented for production
 // const open = require('open');
@@ -513,52 +512,52 @@ app.get('/', (req, res) => {
 });
 
 // Download file from URL
-// async function downloadFile(url, filename) {
-//   try {
-//     console.log(`Downloading file from: ${url}`);
+async function downloadFile(url, filename) {
+  try {
+    console.log(`Downloading file from: ${url}`);
     
-//     // Determine mimetype based on file extension
-//     const ext = filename.split('.').pop().toLowerCase();
-//     let mimetype;
+    // Determine mimetype based on file extension
+    const ext = filename.split('.').pop().toLowerCase();
+    let mimetype;
     
-//     if (ext === 'xlsx') {
-//       mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-//     } else if (ext === 'xls') {
-//       mimetype = 'application/vnd.ms-excel';
-//     } else {
-//       mimetype = 'application/octet-stream';
-//     }
+    if (ext === 'xlsx') {
+      mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    } else if (ext === 'xls') {
+      mimetype = 'application/vnd.ms-excel';
+    } else {
+      mimetype = 'application/octet-stream';
+    }
     
-//     // Download the file
-//     const response = await axios.get(url, {
-//       responseType: 'arraybuffer',
-//       timeout: 30000, // 30 seconds timeout
-//       headers: {
-//         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-//       }
-//     });
+    // Download the file
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 30000, // 30 seconds timeout
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
     
-//     if (response.status !== 200) {
-//       throw new Error(`Failed to download file: HTTP status ${response.status}`);
-//     }
+    if (response.status !== 200) {
+      throw new Error(`Failed to download file: HTTP status ${response.status}`);
+    }
     
-//     // Check if we actually got data
-//     if (!response.data || response.data.length === 0) {
-//       throw new Error('Downloaded file is empty');
-//     }
+    // Check if we actually got data
+    if (!response.data || response.data.length === 0) {
+      throw new Error('Downloaded file is empty');
+    }
     
-//     console.log(`Successfully downloaded ${filename}, size: ${response.data.length} bytes`);
+    console.log(`Successfully downloaded ${filename}, size: ${response.data.length} bytes`);
     
-//     return {
-//       mimetype: mimetype,
-//       data: response.data,
-//       filename: filename
-//     };
-//   } catch (error) {
-//     console.error(`Error downloading file: ${error.message}`);
-//     throw new Error(`Failed to download file: ${error.message}`);
-//   }
-// }
+    return {
+      mimetype: mimetype,
+      data: response.data,
+      filename: filename
+    };
+  } catch (error) {
+    console.error(`Error downloading file: ${error.message}`);
+    throw new Error(`Failed to download file: ${error.message}`);
+  }
+}
 
 // Send text message
 app.post('/send-text', async (req, res) => {
@@ -1328,109 +1327,32 @@ app.post('/send-group-message', async (req, res) => {
 });
 
 // NEW ENDPOINT: Send Excel file to individual numbers and groups
-// app.post('/send-excelfilegrpandNo', async (req, res) => {
-//   const { fileUrl, fileName, caption, numbers, groupIds } = req.body;
+app.post('/send-excelfilegrpandNo', async (req, res) => {
+  const { fileUrl, fileName, caption, numbers, groupIds } = req.body;
   
-//   if (!fileUrl || !fileName) {
-//     return res.status(400).send('❌ Missing file URL or file name');
-//   }
+  if (!fileUrl || !fileName) {
+    return res.status(400).send('❌ Missing file URL or file name');
+  }
   
-//   if ((!numbers || numbers.length === 0) && (!groupIds || groupIds.length === 0)) {
-//     return res.status(400).send('❌ No recipients specified. Provide at least one number or group ID');
-//   }
+  if ((!numbers || numbers.length === 0) && (!groupIds || groupIds.length === 0)) {
+    return res.status(400).send('❌ No recipients specified. Provide at least one number or group ID');
+  }
   
-//   try {
-//     if (!isLoggedIn || !client) {
-//       return res.status(503).send('❌ WhatsApp not connected. Please scan QR code first.');
-//     }
-    
-//     // Download the Excel file to memory
-//     const fileData = await downloadFile(fileUrl, fileName);
-    
-//     // Create MessageMedia directly from the buffer
-//     const media = new MessageMedia(
-//       fileData.mimetype, 
-//       Buffer.from(fileData.data).toString('base64'),
-//       fileData.filename
-//     );
-    
-//     const results = {
-//       success: [],
-//       failed: []
-//     };
-    
-//     // Send to individual numbers
-//     if (numbers && numbers.length > 0) {
-//       for (const number of numbers) {
-//         try {
-//           const chatId = number.includes('@c.us') ? number : `${number}@c.us`;
-//           await client.sendMessage(chatId, media, { caption: caption || fileName });
-//           log(`✅ Excel file sent to number ${number}`);
-//           results.success.push({ type: 'number', id: number });
-//         } catch (error) {
-//           log(`❌ Error sending file to number ${number}: ${error.message}`);
-//           results.failed.push({ type: 'number', id: number, error: error.message });
-//         }
-//       }
-//     }
-    
-//     // Send to groups
-//     if (groupIds && groupIds.length > 0) {
-//       for (const groupId of groupIds) {
-//         try {
-//           const chatId = groupId.includes('@g.us') ? groupId : `${groupId}@g.us`;
-//           await client.sendMessage(chatId, media, { caption: caption || fileName });
-//           log(`✅ Excel file sent to group ${groupId}`);
-//           results.success.push({ type: 'group', id: groupId });
-//         } catch (error) {
-//           log(`❌ Error sending file to group ${groupId}: ${error.message}`);
-//           results.failed.push({ type: 'group', id: groupId, error: error.message });
-//         }
-//       }
-//     }
-    
-//     lastActiveTimestamp = Date.now();
-    
-//     res.json({
-//       message: '📊 Excel file sending completed',
-//       results
-//     });
-//   } catch (error) {
-//     log(`❌ Error processing Excel file request: ${error.message}`);
-    
-//     if (
-//       error.message &&
-//       (error.message.includes('Connection closed') ||
-//        error.message.includes('not connected') ||
-//        error.message.includes('terminated') ||
-//        error.message.includes('timeout'))
-//     ) {
-//       await handleDisconnection(`File send failure: ${error.message}`);
-//       return res.status(503).send('❌ WhatsApp disconnected. Reinitializing connection. Please try again later.');
-//     }
-    
-//     checkActiveConnection();
-//     res.status(500).send(`❌ Failed to send Excel file: ${error.message}`);
-//   }
-// });
-
-// New endpoint that accepts a direct file upload
-app.post('/send-excelfilegrpandNo-upload', upload.single('file'), async (req, res) => {
   try {
-    // Get the uploaded file
-    const file = req.file;
-    if (!file) {
-      return res.status(400).json({ message: 'No file uploaded' });
+    if (!isLoggedIn || !client) {
+      return res.status(503).send('❌ WhatsApp not connected. Please scan QR code first.');
     }
-
-    // Get other parameters
-    const caption = req.body.caption || 'Excel file';
-    const numbers = JSON.parse(req.body.numbers || '[]');
-    const groupIds = JSON.parse(req.body.groupIds || 'null');
     
-    console.log('File received:', file.originalname, 'Size:', file.size, 'bytes');
+    // Download the Excel file to memory
+    const fileData = await downloadFile(fileUrl, fileName);
     
-    // Processing for WhatsApp sending
+    // Create MessageMedia directly from the buffer
+    const media = new MessageMedia(
+      fileData.mimetype, 
+      Buffer.from(fileData.data).toString('base64'),
+      fileData.filename
+    );
+    
     const results = {
       success: [],
       failed: []
@@ -1440,92 +1362,169 @@ app.post('/send-excelfilegrpandNo-upload', upload.single('file'), async (req, re
     if (numbers && numbers.length > 0) {
       for (const number of numbers) {
         try {
-          // This part depends on your WhatsApp library
-          await client.sendMessage(`${number}@c.us`, caption);
-          
-          // Send the file - make sure to use the correct method for your WhatsApp library
-          const media = MessageMedia.fromFilePath(file.path);
-          await client.sendMessage(`${number}@c.us`, media);
-          
+          const chatId = number.includes('@c.us') ? number : `${number}@c.us`;
+          await client.sendMessage(chatId, media, { caption: caption || fileName });
+          log(`✅ Excel file sent to number ${number}`);
           results.success.push({ type: 'number', id: number });
         } catch (error) {
-          console.error(`Failed to send to ${number}:`, error);
+          log(`❌ Error sending file to number ${number}: ${error.message}`);
           results.failed.push({ type: 'number', id: number, error: error.message });
         }
       }
     }
     
-    // Similar code for group IDs if needed
+    // Send to groups
+    if (groupIds && groupIds.length > 0) {
+      for (const groupId of groupIds) {
+        try {
+          const chatId = groupId.includes('@g.us') ? groupId : `${groupId}@g.us`;
+          await client.sendMessage(chatId, media, { caption: caption || fileName });
+          log(`✅ Excel file sent to group ${groupId}`);
+          results.success.push({ type: 'group', id: groupId });
+        } catch (error) {
+          log(`❌ Error sending file to group ${groupId}: ${error.message}`);
+          results.failed.push({ type: 'group', id: groupId, error: error.message });
+        }
+      }
+    }
     
-    // Delete the temporary file
-    fs.unlinkSync(file.path);
+    lastActiveTimestamp = Date.now();
     
     res.json({
-      message: 'Excel file sending completed',
+      message: '📊 Excel file sending completed',
       results
     });
   } catch (error) {
-    console.error('Error in file upload endpoint:', error);
-    res.status(500).json({ error: error.message });
+    log(`❌ Error processing Excel file request: ${error.message}`);
+    
+    if (
+      error.message &&
+      (error.message.includes('Connection closed') ||
+       error.message.includes('not connected') ||
+       error.message.includes('terminated') ||
+       error.message.includes('timeout'))
+    ) {
+      await handleDisconnection(`File send failure: ${error.message}`);
+      return res.status(503).send('❌ WhatsApp disconnected. Reinitializing connection. Please try again later.');
+    }
+    
+    checkActiveConnection();
+    res.status(500).send(`❌ Failed to send Excel file: ${error.message}`);
   }
 });
 
+// // New endpoint that accepts a direct file upload
+// app.post('/send-excelfilegrpandNo-upload', upload.single('file'), async (req, res) => {
+//   try {
+//     // Get the uploaded file
+//     const file = req.file;
+//     if (!file) {
+//       return res.status(400).json({ message: 'No file uploaded' });
+//     }
+
+//     // Get other parameters
+//     const caption = req.body.caption || 'Excel file';
+//     const numbers = JSON.parse(req.body.numbers || '[]');
+//     const groupIds = JSON.parse(req.body.groupIds || 'null');
+    
+//     console.log('File received:', file.originalname, 'Size:', file.size, 'bytes');
+    
+//     // Processing for WhatsApp sending
+//     const results = {
+//       success: [],
+//       failed: []
+//     };
+    
+//     // Send to individual numbers
+//     if (numbers && numbers.length > 0) {
+//       for (const number of numbers) {
+//         try {
+//           // This part depends on your WhatsApp library
+//           await client.sendMessage(`${number}@c.us`, caption);
+          
+//           // Send the file - make sure to use the correct method for your WhatsApp library
+//           const media = MessageMedia.fromFilePath(file.path);
+//           await client.sendMessage(`${number}@c.us`, media);
+          
+//           results.success.push({ type: 'number', id: number });
+//         } catch (error) {
+//           console.error(`Failed to send to ${number}:`, error);
+//           results.failed.push({ type: 'number', id: number, error: error.message });
+//         }
+//       }
+//     }
+    
+//     // Similar code for group IDs if needed
+    
+//     // Delete the temporary file
+//     fs.unlinkSync(file.path);
+    
+//     res.json({
+//       message: 'Excel file sending completed',
+//       results
+//     });
+//   } catch (error) {
+//     console.error('Error in file upload endpoint:', error);
+//     res.status(500).json({ error: error.message });
+//   }
+// });
+
 // Optional - enhanced existing endpoint with better error handling
-app.post('/send-excelfilegrpandNo', async (req, res) => {
-  try {
-    const { fileUrl, fileName, caption, numbers, groupIds } = req.body;
+// app.post('/send-excelfilegrpandNo', async (req, res) => {
+//   try {
+//     const { fileUrl, fileName, caption, numbers, groupIds } = req.body;
     
-    if (!fileUrl) {
-      return res.status(400).json({ message: 'fileUrl is required' });
-    }
+//     if (!fileUrl) {
+//       return res.status(400).json({ message: 'fileUrl is required' });
+//     }
     
-    console.log('Received request to download and send file:', fileUrl);
+//     console.log('Received request to download and send file:', fileUrl);
     
-    // Download the file from URL
-    const tempFilePath = path.join('uploads', fileName || 'temp.xlsx');
+//     // Download the file from URL
+//     const tempFilePath = path.join('uploads', fileName || 'temp.xlsx');
     
-    try {
-      // Log before download
-      console.log('Downloading file from URL...');
+//     try {
+//       // Log before download
+//       console.log('Downloading file from URL...');
       
-      // Download the file - this is a simplification, you would use a proper download function
-      const response = await axios({
-        url: fileUrl,
-        method: 'GET',
-        responseType: 'stream'
-      });
+//       // Download the file - this is a simplification, you would use a proper download function
+//       const response = await axios({
+//         url: fileUrl,
+//         method: 'GET',
+//         responseType: 'stream'
+//       });
       
-      // Write to file
-      const writer = fs.createWriteStream(tempFilePath);
-      response.data.pipe(writer);
+//       // Write to file
+//       const writer = fs.createWriteStream(tempFilePath);
+//       response.data.pipe(writer);
       
-      await new Promise((resolve, reject) => {
-        writer.on('finish', resolve);
-        writer.on('error', reject);
-      });
+//       await new Promise((resolve, reject) => {
+//         writer.on('finish', resolve);
+//         writer.on('error', reject);
+//       });
       
-      console.log('File downloaded successfully to', tempFilePath);
-      console.log('File size:', fs.statSync(tempFilePath).size, 'bytes');
+//       console.log('File downloaded successfully to', tempFilePath);
+//       console.log('File size:', fs.statSync(tempFilePath).size, 'bytes');
       
-      // Same sending logic as above
-      // ...
+//       // Same sending logic as above
+//       // ...
       
-      // Clean up
-      fs.unlinkSync(tempFilePath);
+//       // Clean up
+//       fs.unlinkSync(tempFilePath);
       
-      res.json({
-        message: 'Excel file sending completed',
-        results: { success: [], failed: [] } // Fill with actual results
-      });
-    } catch (downloadError) {
-      console.error('Error downloading file:', downloadError);
-      res.status(500).json({ error: `Failed to download file: ${downloadError.message}` });
-    }
-  } catch (error) {
-    console.error('Error in URL endpoint:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+//       res.json({
+//         message: 'Excel file sending completed',
+//         results: { success: [], failed: [] } // Fill with actual results
+//       });
+//     } catch (downloadError) {
+//       console.error('Error downloading file:', downloadError);
+//       res.status(500).json({ error: `Failed to download file: ${downloadError.message}` });
+//     }
+//   } catch (error) {
+//     console.error('Error in URL endpoint:', error);
+//     res.status(500).json({ error: error.message });
+//   }
+// });
 
 // Status endpoint to check server and WhatsApp connection status
 app.get('/status', async (req, res) => {
