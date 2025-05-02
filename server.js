@@ -4,6 +4,7 @@ const { Client, MessageMedia, LocalAuth } = require('whatsapp-web.js');
 const sharp = require('sharp');
 const fs = require('fs');
 const axios = require('axios');
+const axios = require('axios');
 const path = require('path');
 const { exec } = require('child_process');
 // For auto open browser - uncomment for development, keep commented for production
