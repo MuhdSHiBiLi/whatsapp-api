@@ -512,24 +512,51 @@ app.get('/', (req, res) => {
 });
 
 // Download file from URL
-async function downloadFile(fileUrl, fileName) {
-  const response = await axios({
-    method: 'GET',
-    url: fileUrl,
-    responseType: 'arraybuffer'  // Important for binary files like Excel
-  });
-  
-  // Create temp directory if it doesn't exist
-  const tempPath = path.join(__dirname, 'temp');
-  if (!fs.existsSync(tempPath)) {
-    fs.mkdirSync(tempPath);
+async function downloadFile(url, filename) {
+  try {
+    console.log(`Downloading file from: ${url}`);
+    
+    // Determine mimetype based on file extension
+    const ext = filename.split('.').pop().toLowerCase();
+    let mimetype;
+    
+    if (ext === 'xlsx') {
+      mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    } else if (ext === 'xls') {
+      mimetype = 'application/vnd.ms-excel';
+    } else {
+      mimetype = 'application/octet-stream';
+    }
+    
+    // Download the file
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 30000, // 30 seconds timeout
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    
+    if (response.status !== 200) {
+      throw new Error(`Failed to download file: HTTP status ${response.status}`);
+    }
+    
+    // Check if we actually got data
+    if (!response.data || response.data.length === 0) {
+      throw new Error('Downloaded file is empty');
+    }
+    
+    console.log(`Successfully downloaded ${filename}, size: ${response.data.length} bytes`);
+    
+    return {
+      mimetype: mimetype,
+      data: response.data,
+      filename: filename
+    };
+  } catch (error) {
+    console.error(`Error downloading file: ${error.message}`);
+    throw new Error(`Failed to download file: ${error.message}`);
   }
-  
-  // Save file to temp directory
-  const filePath = path.join(tempPath, fileName);
-  fs.writeFileSync(filePath, response.data);
-  
-  return filePath;
 }
 
 // Send text message
