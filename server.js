@@ -3,6 +3,7 @@ const qrcode = require('qrcode');
 const { Client, MessageMedia, LocalAuth } = require('whatsapp-web.js');
 const sharp = require('sharp');
 const fs = require('fs');
+const axios = require('axios');
 const path = require('path');
 const { exec } = require('child_process');
 // For auto open browser - uncomment for development, keep commented for production
@@ -510,6 +511,27 @@ app.get('/', (req, res) => {
   }
 });
 
+// Download file from URL
+async function downloadFile(fileUrl, fileName) {
+  const response = await axios({
+    method: 'GET',
+    url: fileUrl,
+    responseType: 'arraybuffer'  // Important for binary files like Excel
+  });
+  
+  // Create temp directory if it doesn't exist
+  const tempPath = path.join(__dirname, 'temp');
+  if (!fs.existsSync(tempPath)) {
+    fs.mkdirSync(tempPath);
+  }
+  
+  // Save file to temp directory
+  const filePath = path.join(tempPath, fileName);
+  fs.writeFileSync(filePath, response.data);
+  
+  return filePath;
+}
+
 // Send text message
 app.post('/send-text', async (req, res) => {
     const { number, message } = req.body;
@@ -631,77 +653,77 @@ app.post('/send-text', async (req, res) => {
 //     }
 // });
 
-app.post('/send-messagehd', async (req, res) => {
-  const { number, message, mediaUrl, mediaType } = req.body;
+// app.post('/send-messagehd', async (req, res) => {
+//   const { number, message, mediaUrl, mediaType } = req.body;
 
-  if (!number || (!message && !mediaUrl)) {
-    return res.status(400).send('❌ Missing number or message/mediaUrl');
-  }
+//   if (!number || (!message && !mediaUrl)) {
+//     return res.status(400).send('❌ Missing number or message/mediaUrl');
+//   }
 
-  try {
-    if (!isLoggedIn || !client) {
-      return res.status(503).send('❌ WhatsApp not connected. Please scan QR code first.');
-    }
+//   try {
+//     if (!isLoggedIn || !client) {
+//       return res.status(503).send('❌ WhatsApp not connected. Please scan QR code first.');
+//     }
 
-    const chatId = number.includes('@c.us') ? number : `${number}@c.us`;
+//     const chatId = number.includes('@c.us') ? number : `${number}@c.us`;
 
-    if (mediaUrl) {
-      try {
-        // Load media from URL with unsafe MIME option
-        const media = await MessageMedia.fromUrl(mediaUrl, {
-          unsafeMime: true,
-          mimetype: mediaType // Use provided MIME type if available
-        });
+//     if (mediaUrl) {
+//       try {
+//         // Load media from URL with unsafe MIME option
+//         const media = await MessageMedia.fromUrl(mediaUrl, {
+//           unsafeMime: true,
+//           mimetype: mediaType // Use provided MIME type if available
+//         });
 
-        const sendPromise = client.sendMessage(chatId, media, {
-          caption: message || '',
-          sendMediaAsDocument: true // Send as document
-        });
+//         const sendPromise = client.sendMessage(chatId, media, {
+//           caption: message || '',
+//           sendMediaAsDocument: true // Send as document
+//         });
         
-        await Promise.race([
-          sendPromise,
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Send timeout')), 30000) // Longer timeout for media
-          )
-        ]);
+//         await Promise.race([
+//           sendPromise,
+//           new Promise((_, reject) => 
+//             setTimeout(() => reject(new Error('Send timeout')), 30000) // Longer timeout for media
+//           )
+//         ]);
         
-        log(`✅ HD media message sent to ${number} from URL`);
-      } catch (mediaError) {
-        log(`❌ Error sending media to ${number}: ${mediaError.message}`);
-        return res.status(500).send(`❌ Failed to send media: ${mediaError.message}`);
-      }
-    } else {
-      const sendPromise = client.sendMessage(chatId, message);
-      await Promise.race([
-        sendPromise,
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Send timeout')), 20000)
-        )
-      ]);
+//         log(`✅ HD media message sent to ${number} from URL`);
+//       } catch (mediaError) {
+//         log(`❌ Error sending media to ${number}: ${mediaError.message}`);
+//         return res.status(500).send(`❌ Failed to send media: ${mediaError.message}`);
+//       }
+//     } else {
+//       const sendPromise = client.sendMessage(chatId, message);
+//       await Promise.race([
+//         sendPromise,
+//         new Promise((_, reject) => 
+//           setTimeout(() => reject(new Error('Send timeout')), 20000)
+//         )
+//       ]);
       
-      log(`✅ Text message sent to ${number}`);
-    }
+//       log(`✅ Text message sent to ${number}`);
+//     }
 
-    lastActiveTimestamp = Date.now();
-    res.send('✅ Message sent successfully!');
-  } catch (error) {
-    log(`❌ Error sending message to ${number}: ${error.message}`);
+//     lastActiveTimestamp = Date.now();
+//     res.send('✅ Message sent successfully!');
+//   } catch (error) {
+//     log(`❌ Error sending message to ${number}: ${error.message}`);
     
-    if (
-      error.message &&
-      (error.message.includes('Connection closed') ||
-       error.message.includes('not connected') ||
-       error.message.includes('terminated') ||
-       error.message.includes('timeout'))
-    ) {
-      await handleDisconnection(`Message send failure: ${error.message}`);
-      return res.status(503).send('❌ WhatsApp disconnected. Reinitializing connection. Please try again later.');
-    }
+//     if (
+//       error.message &&
+//       (error.message.includes('Connection closed') ||
+//        error.message.includes('not connected') ||
+//        error.message.includes('terminated') ||
+//        error.message.includes('timeout'))
+//     ) {
+//       await handleDisconnection(`Message send failure: ${error.message}`);
+//       return res.status(503).send('❌ WhatsApp disconnected. Reinitializing connection. Please try again later.');
+//     }
     
-    checkActiveConnection();
-    res.status(500).send(`❌ Failed to send message: ${error.message}`);
-  }
-});
+//     checkActiveConnection();
+//     res.status(500).send(`❌ Failed to send message: ${error.message}`);
+//   }
+// });
 
 app.post('/send-messagehd', async (req, res) => {
   const { number, message, mediaUrl, mediaType } = req.body;
@@ -1276,6 +1298,94 @@ app.post('/send-group-message', async (req, res) => {
     });
   }
 });
+
+// NEW ENDPOINT: Send Excel file to individual numbers and groups
+app.post('/send-excelfilegrpandNo', async (req, res) => {
+  const { fileUrl, fileName, caption, numbers, groupIds } = req.body;
+  
+  if (!fileUrl || !fileName) {
+    return res.status(400).send('❌ Missing file URL or file name');
+  }
+  
+  if ((!numbers || numbers.length === 0) && (!groupIds || groupIds.length === 0)) {
+    return res.status(400).send('❌ No recipients specified. Provide at least one number or group ID');
+  }
+  
+  try {
+    if (!isLoggedIn || !client) {
+      return res.status(503).send('❌ WhatsApp not connected. Please scan QR code first.');
+    }
+    
+    // Download the Excel file to memory
+    const fileData = await downloadFile(fileUrl, fileName);
+    
+    // Create MessageMedia directly from the buffer
+    const media = new MessageMedia(
+      fileData.mimetype, 
+      Buffer.from(fileData.data).toString('base64'),
+      fileData.filename
+    );
+    
+    const results = {
+      success: [],
+      failed: []
+    };
+    
+    // Send to individual numbers
+    if (numbers && numbers.length > 0) {
+      for (const number of numbers) {
+        try {
+          const chatId = number.includes('@c.us') ? number : `${number}@c.us`;
+          await client.sendMessage(chatId, media, { caption: caption || fileName });
+          log(`✅ Excel file sent to number ${number}`);
+          results.success.push({ type: 'number', id: number });
+        } catch (error) {
+          log(`❌ Error sending file to number ${number}: ${error.message}`);
+          results.failed.push({ type: 'number', id: number, error: error.message });
+        }
+      }
+    }
+    
+    // Send to groups
+    if (groupIds && groupIds.length > 0) {
+      for (const groupId of groupIds) {
+        try {
+          const chatId = groupId.includes('@g.us') ? groupId : `${groupId}@g.us`;
+          await client.sendMessage(chatId, media, { caption: caption || fileName });
+          log(`✅ Excel file sent to group ${groupId}`);
+          results.success.push({ type: 'group', id: groupId });
+        } catch (error) {
+          log(`❌ Error sending file to group ${groupId}: ${error.message}`);
+          results.failed.push({ type: 'group', id: groupId, error: error.message });
+        }
+      }
+    }
+    
+    lastActiveTimestamp = Date.now();
+    
+    res.json({
+      message: '📊 Excel file sending completed',
+      results
+    });
+  } catch (error) {
+    log(`❌ Error processing Excel file request: ${error.message}`);
+    
+    if (
+      error.message &&
+      (error.message.includes('Connection closed') ||
+       error.message.includes('not connected') ||
+       error.message.includes('terminated') ||
+       error.message.includes('timeout'))
+    ) {
+      await handleDisconnection(`File send failure: ${error.message}`);
+      return res.status(503).send('❌ WhatsApp disconnected. Reinitializing connection. Please try again later.');
+    }
+    
+    checkActiveConnection();
+    res.status(500).send(`❌ Failed to send Excel file: ${error.message}`);
+  }
+});
+
 // Status endpoint to check server and WhatsApp connection status
 app.get('/status', async (req, res) => {
   let state = connectionState;
